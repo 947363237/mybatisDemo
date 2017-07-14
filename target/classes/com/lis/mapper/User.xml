@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 映射UserDao,namespace要写也是接口的完全限定名 -->
+<mapper namespace="com.lis.dao.UserDao">
+	
+	<!--[tag:1]
+		配置返回结果集，最终会被映射成为List<User>
+		property	java字段名
+		column		sql查询字段名，注意：如果sql字段去了别名，这里也要用别名
+		id			声明注解是哪个列
+	 -->
+	<resultMap id="resultListUser" type="User">
+		<id property="id" column="id" />
+		<result property="userName" column="userName"/>
+		<result property="userAge" column="userAge"/>
+		<result property="userAddress" column="userAddress"/>
+	</resultMap>
+
+	<!-- 
+		id		要和接口的方法名一致
+		parameterType	方法传递参数的类型
+		resultType		结果的返回类型,resultType="User" 和 resultMap 都可以返回一条或多条，但是如果配关系要用到 resultMap,下面例子会降讲到
+	-->
+	<select id="selectUserByID" parameterType="int" resultType="User">
+		select * from user where id = #{id}
+	</select>
+	
+	<!-- 
+		resultMap	返回指定结果集：[tag:1] 处
+	 -->
+	<select id="selectAllUsers" resultMap="resultListUser">
+		select * from user
+	</select>
+	
+	<select id="selectUsers" parameterType="string" resultMap="resultListUser"> <!-- 返回多条数据，需要自己配置 resultMap -->
+		select * from user where username like #{username} <!-- 或者："%"#{username}"%" -->
+	</select>
+	
+	<!-- 
+		seGeneratedKeys		设置  为"true"表明要MyBatis获取由数据库自动生成的主 键；
+		keyProperty="id"	指定把获取到的主键值注入 
+		#{userAddress} 		mybatis支持ognl语法
+	 -->
+	<!-- <insert id="addUser" parameterType="User" useGeneratedKeys="true" keyProperty="id" keyColumn="id"> -->
+	<insert id="addUser" parameterType="User">
+		<selectKey resultType="java.lang.Integer" order="AFTER" keyProperty="id">    
+	          SELECT LAST_INSERT_ID() AS ID      
+	    </selectKey>   
+    
+		insert into user(userName,userAge,userAddress) values
+		(#{userName},#{userAge},#{userAddress})
+	</insert>
+	
+	<update id="updateUser" parameterType="User">
+		update user set userName=#{userName},userAge=#{userAge},userAddress=#{userAddress}
+		where id=#{id}
+	</update>
+	
+	<delete id="deleteUser" parameterType="int">
+		delete from user where id = #{id}
+	</delete>
+	
+	
+<!-- =================================== 动态sql ========================================== -->
+	
+	<!-- 动态sql查询 ：
+		mybatis 的动态sql语句是基于OGNL表达式的。可以方便的在 sql 语句中实现某些逻辑. 总体说来mybatis 动态SQL 语句主要有以下几类:
+		1. if 语句 (简单的条件判断)
+		2. choose (when,otherwize) ,相当于java 语言中的 switch ,与 jstl 中的choose 很类似.
+		3. trim (对包含的内容加上 prefix,或者 suffix 等，前缀，后缀)
+		4. where (主要是用来简化sql语句中where条件判断的，能智能的处理 and or ,不必担心多余导致语法错误)
+		5. set (主要用于更新时)
+		6. foreach (在实现 mybatis in 语句查询时特别有用)
+		下面分别介绍这几种处理方式
+	-->
+	
+	<!--  sql 标签
+		定义一个sql，其他地方通过 <include refid="from_user" /> 引用	
+	-->
+	<sql id="from_user">select * from user where 1=1</sql>
+	
+	<!-- if 标签 
+		只有条件成立sql才会拼接起来, 类似java语言中：if... if... if...
+	-->
+	<select id="dynamicIfTest" parameterType="user" resultMap="resultListUser">
+		<include refid="from_user" /> <!-- 引用定义好的 sql -->
+		<if test="userName != null">
+			and userName = #{userName}
+		</if>
+		<if test="userAge != null">
+			and userAge = #{userAge}
+		</if>
+		<if test="userAddress != null"> <!-- <if test="userName == '李胜'"> 这样也是可以的 -->
+			and userAddress = #{userAddress}
+		</if>
+	</select>
+	
+	<!-- choose (when,otherwize)标签
+		相当于 java 语言中：if... else if... else if...
+	-->
+	<select id="dynamicChooseTest" parameterType="user" resultMap="resultListUser">
+		select * from user where 1=1
+		<choose>
+			<when test="userName !=null">
+				and userName = #{userName}
+			</when>
+			<when test="userAge !=null">
+				and userAge = #{userAge}
+			</when>
+			<when test="userAddress !=null">
+				and userAddress = #{userAddress}
+			</when>
+		</choose>
+	</select>
+	
+	<!-- trim (对包含的内容加上 prefix,或者 suffix 等，前缀，后缀)   
+		trim标签体，可以嵌套多种标签类型，如： if、 choose ...
+		
+		详解：
+			trim元素的主要功能是可以在自己包含的内容前加上某些前缀，也可以在其后加上某些后缀，
+			与之对应的属性是prefix和suffix；可以把包含内容的首部某些内容覆盖，即忽略，也可
+			以把尾部的某些内容覆盖，对应的属性是prefixOverrides和suffixOverrides；正
+			因为trim有这样的功能，所以我们也可以非常简单的利用trim来代替where元素的功能
+	-->
+	<select id="dynamicTrimTest" parameterType="user" resultMap="resultListUser">
+		select * from user <!-- 注意：这里没有加 where 1=1 -->
+		<trim prefix="where" prefixOverrides="and|or"
+			suffix="order by id desc"><!-- 也可以直接在trim结束标签后写  order by id desc-->
+			<!-- 
+			<if test="userName != null">
+				and userName = #{userName}
+			</if>
+			<if test="userAge != null">
+				and userAge = #{userAge}
+			</if>
+			 -->
+			<choose>
+				<when test="userName !=null">
+					and userName = #{userName}
+				</when>
+				<when test="userAge !=null">
+					and userAge = #{userAge}
+				</when>
+			</choose>
+		</trim>
+	</select>
+	
+	<!--  where 标签
+		主要是用来简化sql语句中where条件判断的，能智能的处理 and or 条件，也不需要担心空格的问题
+		where标签体，可以嵌套多种标签类型，如： if、 choose ...
+	-->
+	<select id="dynamicWhereTest" parameterType="user" resultMap="resultListUser">
+		select * from user
+		<where>
+			<if test="userName != null">
+				and userName = #{userName}
+			</if>
+			<if test="userAge != null">
+				and userAge = #{userAge}
+			</if>
+		</where>
+	</select>
+	
+	<!-- foreach (在实现 mybatis in 语句查询时特别有用)   
+		foreach的主要用在构建in条件中，它可以在SQL语句中进行迭代一个集合。foreach元素的属性主要有item，
+		index，collection，open，separator，close。item表示集合中每一个元素进行迭代时的别名，
+		index指定一个名字，用于表示在迭代过程中，每次迭代到的位置，open表示该语句以什么开始，separator
+		表示在每次进行迭代之间以什么符号作为分隔符，close表示以什么结束，在使用foreach的时候最关键的也是
+		最容易出错的就是collection属性，该属性是必须指定的，但是在不同情况下，该属性的值是不一样的，
+		主要有一下3种情况：
+			如果传入的是单参数且参数类型是一个List的时候，collection属性值为list
+			如果传入的是单参数且参数类型是一个array数组的时候，collection的属性值为array
+			如果传入的参数是多个的时候，我们就需要把它们封装成一个Map了，当然单参数也可以封装成map，实际上
+			如果你在传入参数的时候，在MyBatis里面也是会把它封装成一个Map的，map的key就是参数名，所以这
+			个时候collection属性值就是传入的List或array对象在自己封装的map里面的key
+	-->
+	
+	<!-- foreach 单参数List的类型, parameterType 可以省略 -->
+	<select id="dynamicForeachTest"  resultMap="resultListUser">
+		select * from user where id in
+		<foreach collection="list" open="(" item="item" separator="," close=")" index="index">
+			#{item}
+		</foreach>
+	</select>
+	<!-- foreach 单参数array的类型, parameterType 可以省略 -->
+	<select id="dynamicForeachArrayTest"  resultMap="resultListUser">
+		select * from user where id in
+		<foreach collection="array" open="(" item="item" separator="," close=")" index="index">
+			#{item}
+		</foreach>
+	</select>
+	<!-- foreach map类型,支持单、多参数, parameterType 可以省略-->
+	<select id="dynamicForeachMapTest" resultMap="resultListUser">
+		select * from user where userName like "%"#{userName}"%" and id in
+		<foreach collection="ids" open="(" item="item" separator="," close=")" index="index">
+			#{item}
+		</foreach>
+	</select>
+	
+	<!--  set 主要用于更新时
+		set元素主要是用在更新操作的时候，它的主要功能和where元素其实是差不多的，主要是在包含的语句前输出一个set，
+		然后如果包含的语句是以逗号结束的话将会把该逗号忽略，如果set包含的内容为空的话则会出错。有了set元素我们就
+		可以动态的更新那些修改了的字段
+	-->
+	<update id="dynamicSetTest" parameterType="User">
+		update user
+		<set>
+			<if test="userName != null">
+				userName = #{userName},
+			</if>
+			<if test="userAge != 0">
+				userAge = #{userAge},
+			</if>
+			<if test="userAddress != null">
+				userAddress = #{userAddress}
+			</if>
+		</set>
+		where id = #{id}
+	</update>
+	
+<!-- =================================== mybatis参数传递 ========================================== -->
+	<!-- 通过序号传递  
+		其中，#{0}代表接收的是dao层中的第一个参数，#{1}代表dao层中第二参数，更多参数一致往后加即可。
+	-->
+	<select id="selectUserBySerial" resultMap="resultListUser">
+		select * from user where userName = #{0} and userAge = #{1}
+	</select>
+	
+	<!--  通过map传递
+		上面的 foreach map 也是用的这个
+	-->
+	<select id="selectUserByMap" parameterType="map" resultMap="resultListUser">
+		<!-- select * from user where userName = #{userName,jdbcType=VARCHAR} and userAge  = #{userAge,jdbcType=INTEGER} -->
+		<!-- #{userName}相当于map.get(userName), userName 对应 map的key -->
+		select * from user where userName = #{userName} and userAge  = #{userAge} <!-- jdbcType=VARCHAR  可以省略 -->
+	</select>
+	
+	<!-- @param 通过参数对象传递 -->
+	<select id="selectUserByParam" resultMap="resultListUser">
+		select * from user where userName = #{userName} and userAge  = #{userAge}
+	</select>
+	
+</mapper>

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 关联查询 - 参考文献：http://www.cnblogs.com/xdp-gacl/p/4264440.html -->
+<mapper namespace="com.lis.dao.ArticleDao">
+
+	<sql id="select_article_user">
+		select *,u.id uid from article a,user u where a.userid=u.id
+	</sql>
+	<sql id="select_user_article">
+		select *,a.id aid from user u,article a where u.id=a.userId;
+	</sql>
+
+<!--====================================== 1，关联关系的映射,一对一，多对一  ============================================-->
+	
+	<!-- 1, 一条sql全部查出 
+		select *,a.id aid from user u,article a where u.id=a.userId;
+	-->
+		<!-- 1.1, 方式一, 嵌套式  -->
+			<resultMap id="articles" type="Article" >
+				<id property="id" column="id"/>
+				<result property="title" column="title"/>
+				<result property="content" column="content"/>
+				<association property="user" javaType="User">
+					<id property="id" column="uid" />
+					<result property="userName" column="userName"/>
+					<result property="userAge" column="userAge"/>
+					<result property="userAddress" column="userAddress"/>
+				</association>
+			</resultMap>
+			
+			<!-- u.id要取别名，参见[tag:id] -->
+			<select id="selectAllArticlesImplant" resultMap="articles">
+				<include refid="select_article_user" />
+			</select>
+			
+		<!-- 1.2, 方式二：引用式
+			引用id为Users的resultMap, 这样可以重复利用 Users
+		 -->
+			<resultMap id="articles_users" type="Article" >
+				<id property="id" column="id"/>
+				<result property="title" column="title"/>
+				<result property="content" column="content"/>
+				<!-- association	配置关联关系
+					引用上面id为Users的resultMap 
+				-->
+				<association property="user" resultMap="users"/>
+			</resultMap>
+			
+			<resultMap id="users" type="User">
+				<!-- [tag:id] 注意：这里的column不能写成id，在联表查询中两个表具有相同的字段时，会出现映射错误，
+					如果：最终返回的java对象中User的id取的是Article的id值，所有联表查询中，应避免sql字段重名，
+					用别名代替，此处的column也要相应的改成别名
+				-->
+				<id property="id" column="uid" /><!-- 注意 -->
+				<result property="userName" column="userName"/>
+				<result property="userAge" column="userAge"/>
+				<result property="userAddress" column="userAddress"/>
+			</resultMap>
+			
+			<!-- u.id要取别名，参见[tag:id] -->
+			<select id="selectAllArticlesRef" resultMap="articles_users">
+				<include refid="select_article_user" />
+			</select>
+	
+	<!-- 2, 分多条sql查询 
+		select * from article;
+		select * from user where id = #{userId} //#{userId} 代表 article 里面的 userId
+	-->
+		<resultMap id="articles_tow" type="Article" >
+			<id property="id" column="id"/>
+			<result property="title" column="title"/>
+			<result property="content" column="content"/>
+			<association property="user" column="userId" select="getUser" javaType="User"/> <!-- javaType="User" 可以省略 -->
+		</resultMap>
+		
+		<!-- <resultMap id="users_tow" type="User">
+			<id property="id" column="id"/>
+			<result property="title" column="title"/>
+			<result property="content" column="content"/>
+		</resultMap> -->
+		
+		<!-- resultType="User" 也可替换成 resultMap="users_tow",要自己先做好映射，返回单条数据建议resultType,多条 resultMap -->
+		<select id="selectAllArticlesRefTwo" resultMap="articles_tow"> 
+			select * from article
+		</select>
+		
+		<select id="getUser" parameterType="int" resultType="User">
+			select * from user where id = #{userId}
+		</select>
+	
+	<!-- 增加一篇文章,外键可以#{user.id} -->
+	<insert id="addArticle" parameterType="Article" useGeneratedKeys="true"
+		keyProperty="id">
+		insert into article(userId,title,content) values
+		(#{user.id},#{title},#{content})
+	</insert>
+<!--====================================== 2，关联关系的映射,一对多，多对多，一条sql全部查出 (这里为了方便，查User的方法放到了ArticleDao, 实际开发应该发到UserDao) ============================================-->
+	<!-- 方式一, 嵌套式  -->
+		<resultMap id="userList" type="User">
+			<id property="id" column="id" />
+			<result property="userName" column="userName"/>
+			<result property="userAge" column="userAge"/>
+			<result property="userAddress" column="userAddress"/>
+			<collection property="articles" ofType="Article">
+				<id property="id" column="aid"/> <!-- 取别名，参见[tag:id] -->
+				<result property="title" column="title"/>
+				<result property="content" column="content"/>
+			</collection>
+		</resultMap>
+		
+		<select id="selectAllUsersImplant" resultMap="userList">
+			<include refid="select_user_article" />
+		</select>
+	
+	<!-- 方式二，引入式
+		引用id为Users的resultMap, 这样可以重复利用 Users
+	-->
+		<resultMap id="users_articles" type="User">
+			<id property="id" column="id" />
+			<result property="userName" column="userName"/>
+			<result property="userAge" column="userAge"/>
+			<result property="userAddress" column="userAddress"/>
+			<collection property="articles" ofType="Article" resultMap="articleList" />
+		</resultMap>
+		
+		<resultMap id="articleList" type="Article">
+			<id property="id" column="aid"/> <!-- 取别名，参见[tag:id] -->
+			<result property="title" column="title"/>
+			<result property="content" column="content"/>
+		</resultMap>
+		
+		<select id="selectAllUsersRef" resultMap="users_articles">
+			<include refid="select_user_article" />
+		</select>
+	
+	<!-- 2, 分多条sql查询 
+		select * from user
+		select * from article where userId = #{userId} //#{userId} 代表 user 里面的 id
+	-->
+		<resultMap id="users_articles_tow" type="User">
+			<id property="id" column="id" />
+			<result property="userName" column="userName"/>
+			<result property="userAge" column="userAge"/>
+			<result property="userAddress" column="userAddress"/>
+			<collection property="articles" column="id" ofType="Article" select="getArticle"/>
+		</resultMap>
+		
+		<select id="selectAllUsersRefTow" resultMap="users_articles_tow">
+			select * from user
+		</select>
+		
+		<select id="getArticle" parameterType="int" resultType="Article">
+			select * from article where userId = #{userId}
+		</select>
+</mapper>
